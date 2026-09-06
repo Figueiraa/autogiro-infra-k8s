@@ -22,10 +22,13 @@ variable "jwt_issuer" {
   default     = "autogiro-auth"
 }
 
-# ─── Consumer ────────────────────────────────────────────────────────────────
+# ─── Consumer ──────────────────────────────────────────────────────
 # Representa a Lambda como emissora de tokens.
-resource "kubernetes_manifest" "kong_consumer" {
-  manifest = {
+#
+# Usa kubectl_manifest em vez de kubernetes_manifest: o segundo consulta o
+# schema do CRD durante o plan, quando o cluster ainda nao existe.
+resource "kubectl_manifest" "kong_consumer" {
+  yaml_body = yamlencode({
     apiVersion = "configuration.konghq.com/v1"
     kind       = "KongConsumer"
 
@@ -40,7 +43,7 @@ resource "kubernetes_manifest" "kong_consumer" {
 
     username    = "autogiro-auth"
     credentials = [kubernetes_secret.kong_jwt.metadata[0].name]
-  }
+  })
 
   depends_on = [helm_release.kong, kubernetes_namespace.autogiro]
 }
@@ -70,8 +73,8 @@ resource "kubernetes_secret" "kong_jwt" {
 # ─── Plugin ──────────────────────────────────────────────────────────────────
 # Referenciado pelo Ingress da aplicação através da annotation
 # `konghq.com/plugins: autogiro-jwt` (ver k8s/ingress.yaml no autogiro-app).
-resource "kubernetes_manifest" "kong_jwt_plugin" {
-  manifest = {
+resource "kubectl_manifest" "kong_jwt_plugin" {
+  yaml_body = yamlencode({
     apiVersion = "configuration.konghq.com/v1"
     kind       = "KongPlugin"
 
@@ -83,14 +86,14 @@ resource "kubernetes_manifest" "kong_jwt_plugin" {
     plugin = "jwt"
 
     config = {
-      # Onde procurar o token na requisição.
+      # Onde procurar o token na requisicao.
       header_names     = ["Authorization"]
       claims_to_verify = ["exp"]
       key_claim_name   = "iss"
-      # Rejeita requisição sem token em vez de deixar passar como anônima.
+      # Rejeita requisicao sem token em vez de deixar passar como anonima.
       anonymous = ""
     }
-  }
+  })
 
   depends_on = [helm_release.kong, kubernetes_namespace.autogiro]
 }
