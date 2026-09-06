@@ -90,8 +90,9 @@ resource "kubectl_manifest" "kong_jwt_plugin" {
       header_names     = ["Authorization"]
       claims_to_verify = ["exp"]
       key_claim_name   = "iss"
-      # Rejeita requisicao sem token em vez de deixar passar como anonima.
-      anonymous = ""
+      # Sem `anonymous`: requisicao sem token valido recebe 401. O schema do
+      # Kong rejeita string vazia, e definir um consumer anonimo deixaria a
+      # requisicao passar adiante, que e o oposto do desejado.
     }
   })
 
