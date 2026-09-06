@@ -1,0 +1,14 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+crash.log
+
+# Kubeconfig gerado
+kubeconfig
+*.kubeconfig
+
+# Credenciais
+.env

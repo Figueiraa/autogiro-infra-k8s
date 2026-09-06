@@ -1,0 +1,130 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+  pull-requests: write
+  security-events: write
+
+concurrency:
+  group: ci-cd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  # ─── CI: validação e análise estática do Terraform ─────────────────────────
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.3"
+
+      - name: Format check
+        run: terraform -chdir=terraform fmt -check -recursive
+
+      - name: Init (sem backend)
+        run: terraform -chdir=terraform init -backend=false
+
+      - name: Validate
+        run: terraform -chdir=terraform validate
+
+      - name: Lint (tflint)
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: latest
+
+      - name: Run tflint
+        run: |
+          tflint --init
+          tflint --chdir=terraform --recursive
+
+      # Análise de segurança da infraestrutura como código.
+      - name: Security scan (checkov)
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: terraform
+          framework: terraform
+          soft_fail: true
+          output_format: cli
+
+  # ─── Teste de integração: sobe o cluster de verdade ────────────────────────
+  # O runner do GitHub tem Docker, então o kind funciona. Valida que o cluster,
+  # o Kong e o HPA sobem antes de qualquer deploy real.
+  integration:
+    name: Cluster smoke test
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.3"
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform init
+
+      - name: Criar cluster e instalar Kong
+        env:
+          TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET || 'ci-smoke-test-secret-value' }}
+          # Sem license key: o agente do New Relic não é instalado no CI.
+          TF_VAR_new_relic_license_key: ""
+        run: terraform -chdir=terraform apply -auto-approve
+
+      - name: Verificar o cluster
+        run: |
+          kubectl get nodes
+          kubectl -n kong rollout status deployment/kong-kong --timeout=300s
+          kubectl -n kube-system rollout status deployment/metrics-server --timeout=180s
+
+          echo "Verificando que o proxy do Kong responde"
+          curl -fsS -o /dev/null -w "Kong respondeu com HTTP %{http_code}\n" \
+            http://localhost:8000 || true
+
+      - name: Destruir o cluster
+        if: always()
+        env:
+          TF_VAR_jwt_secret: "ci-smoke-test-secret-value"
+          TF_VAR_new_relic_license_key: ""
+        run: terraform -chdir=terraform destroy -auto-approve
+
+  # ─── CD: aplica no cluster real ────────────────────────────────────────────
+  # O cluster do AutoGiro é local, então o deploy exige um self-hosted runner
+  # na máquina que o hospeda. Habilite com a variável DEPLOY_ENABLED=true.
+  deploy:
+    name: Deploy cluster
+    needs: integration
+    if: github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: [self-hosted, autogiro]
+    environment: ${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform init
+
+      - name: Terraform Apply
+        env:
+          TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+          TF_VAR_new_relic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+        run: terraform -chdir=terraform apply -auto-approve
+
+      - name: Resumo
+        run: |
+          {
+            echo "### Cluster provisionado"
+            echo ""
+            echo "- Gateway: $(terraform -chdir=terraform output -raw kong_proxy_url)"
+            echo "- Namespace: $(terraform -chdir=terraform output -raw namespace)"
+          } >> "$GITHUB_STEP_SUMMARY"

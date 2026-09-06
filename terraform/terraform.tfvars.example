@@ -1,0 +1,14 @@
+# Copie para terraform.tfvars e preencha. NÃO comite o arquivo preenchido.
+
+cluster_name = "autogiro"
+namespace    = "autogiro"
+
+# Porta local do gateway. Todas as chamadas à API passam por ela.
+kong_http_port  = 8000
+kong_admin_port = 8001
+
+# Mesmo segredo configurado em autogiro-auth e autogiro-app.
+jwt_secret = "gere-com-python-c-import-secrets-print-secrets-token_urlsafe-48"
+
+# License key do New Relic. Deixe vazio para não instalar o agente.
+new_relic_license_key = ""
