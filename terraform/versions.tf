@@ -14,5 +14,11 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 2.13"
     }
+    # Aplica CRDs do Kong sem consultar o schema do cluster durante o plan,
+    # o que o kubernetes_manifest exige e quebra na criacao do cluster.
+    kubectl = {
+      source  = "gavinbunney/kubectl"
+      version = "~> 1.14"
+    }
   }
 }

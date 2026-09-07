@@ -41,8 +41,3 @@ variable "new_relic_cluster_name" {
   default     = "autogiro"
 }
 
-variable "enable_prometheus_stack" {
-  description = "Instala Prometheus e Grafana como stack local complementar."
-  type        = bool
-  default     = true
-}
