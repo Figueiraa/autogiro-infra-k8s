@@ -41,3 +41,25 @@ variable "new_relic_cluster_name" {
   default     = "autogiro"
 }
 
+# ─── New Relic: dashboards e alertas (API NerdGraph) ─────────────────────────
+# Diferente da license key (ingestao de dados), estas credenciais servem para
+# CRIAR recursos na conta. Sem a User API key nada e provisionado.
+
+variable "new_relic_account_id" {
+  description = "ID numerico da conta New Relic onde dashboards e alertas sao criados."
+  type        = number
+  default     = 0
+}
+
+variable "new_relic_api_key" {
+  description = "User API key (prefixo NRAK) do New Relic. Vazio desabilita dashboards e alertas."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "alert_email" {
+  description = "E-mail que recebe as notificacoes das condicoes de alerta do New Relic."
+  type        = string
+  default     = ""
+}

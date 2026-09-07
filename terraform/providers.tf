@@ -28,3 +28,12 @@ provider "kubectl" {
   cluster_ca_certificate = kind_cluster.this.cluster_ca_certificate
   load_config_file       = false
 }
+
+# Provider do New Relic (API NerdGraph). Quando a chave nao e informada os
+# recursos ficam com count = 0 e o provider nunca chega a ser chamado, o que
+# mantem o `terraform plan` do CI funcionando sem credenciais.
+provider "newrelic" {
+  account_id = var.new_relic_account_id
+  api_key    = var.new_relic_api_key
+  region     = "US"
+}
