@@ -20,5 +20,10 @@ terraform {
       source  = "gavinbunney/kubectl"
       version = "~> 1.14"
     }
+    # Dashboards e condicoes de alerta do New Relic (NerdGraph).
+    newrelic = {
+      source  = "newrelic/newrelic"
+      version = "~> 3.30"
+    }
   }
 }
