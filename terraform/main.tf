@@ -1,43 +1,3 @@
-# ─── Cluster Kubernetes ──────────────────────────────────────────────────────
-# O control plane expõe as portas do Kong no host, para que o gateway seja
-# alcançável de fora do cluster sem LoadBalancer (que o kind não provisiona).
-resource "kind_cluster" "this" {
-  name           = var.cluster_name
-  node_image     = var.node_image
-  wait_for_ready = true
-
-  kind_config {
-    kind        = "Cluster"
-    api_version = "kind.x-k8s.io/v1alpha4"
-
-    node {
-      role = "control-plane"
-
-      # Rótulo exigido pelo Ingress do Kong para o node selector.
-      kubeadm_config_patches = [
-        "kind: InitConfiguration\nnodeRegistration:\n  kubeletExtraArgs:\n    node-labels: \"ingress-ready=true\"\n"
-      ]
-
-      extra_port_mappings {
-        container_port = 30000
-        host_port      = var.kong_http_port
-        protocol       = "TCP"
-      }
-
-      extra_port_mappings {
-        container_port = 30001
-        host_port      = var.kong_admin_port
-        protocol       = "TCP"
-      }
-    }
-
-    # Nó worker adicional: dá ao HPA espaço real para distribuir réplicas.
-    node {
-      role = "worker"
-    }
-  }
-}
-
 # ─── Namespaces ──────────────────────────────────────────────────────────────
 resource "kubernetes_namespace" "autogiro" {
   metadata {
@@ -48,7 +8,7 @@ resource "kubernetes_namespace" "autogiro" {
     }
   }
 
-  depends_on = [kind_cluster.this]
+  depends_on = [aws_eks_node_group.this]
 }
 
 resource "kubernetes_namespace" "kong" {
@@ -56,7 +16,7 @@ resource "kubernetes_namespace" "kong" {
     name = "kong"
   }
 
-  depends_on = [kind_cluster.this]
+  depends_on = [aws_eks_node_group.this]
 }
 
 # ─── metrics-server ──────────────────────────────────────────────────────────
@@ -68,13 +28,14 @@ resource "helm_release" "metrics_server" {
   namespace  = "kube-system"
   version    = "3.12.2"
 
-  # Em kind os kubelets usam certificados self-signed.
+  # Os kubelets do EKS apresentam certificados assinados pela CA interna do
+  # cluster, que o metrics-server nao valida por padrao.
   set {
     name  = "args[0]"
     value = "--kubelet-insecure-tls"
   }
 
-  depends_on = [kind_cluster.this]
+  depends_on = [aws_eks_node_group.this]
 }
 
 # ─── Kong Gateway (API Gateway do projeto) ───────────────────────────────────
@@ -99,15 +60,19 @@ resource "helm_release" "kong" {
     value = "false"
   }
 
-  # NodePort fixo casando com o extra_port_mapping do kind.
+  # No EKS o proxy vira um Service do tipo LoadBalancer: a AWS provisiona um
+  # Network Load Balancer com hostname publico, que e o unico ponto de entrada
+  # da aplicacao. No kind isto era um NodePort, porque kind nao provisiona LB.
   set {
     name  = "proxy.type"
-    value = "NodePort"
+    value = "LoadBalancer"
   }
 
+  # NLB (camada 4) em vez do Classic Load Balancer padrao: mais barato por hora
+  # e suficiente, ja que o TLS nao e terminado no balanceador.
   set {
-    name  = "proxy.http.nodePort"
-    value = "30000"
+    name  = "proxy.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
+    value = "nlb"
   }
 
   set {
@@ -125,17 +90,16 @@ resource "helm_release" "kong" {
     value = "true"
   }
 
+  # SEGURANCA: a Admin API do Kong permite reconfigurar rotas e plugins sem
+  # autenticacao. Fica em ClusterIP, alcancavel apenas de dentro do cluster
+  # (via `kubectl port-forward` para inspecao). Expo-la em LoadBalancer
+  # entregaria o controle do gateway para a internet.
   set {
     name  = "admin.type"
-    value = "NodePort"
+    value = "ClusterIP"
   }
 
-  set {
-    name  = "admin.http.nodePort"
-    value = "30001"
-  }
-
-  depends_on = [kind_cluster.this]
+  depends_on = [aws_eks_node_group.this]
 }
 
 # ─── New Relic ───────────────────────────────────────────────────────────────
@@ -189,11 +153,12 @@ resource "helm_release" "new_relic" {
     value = "true"
   }
 
-  # O Pixie exige mais recursos do que um cluster kind local comporta.
+  # O Pixie exige mais recursos do que os nos t4g.small comportam, e o eBPF
+  # dele elevaria o volume ingerido bem acima da cota gratuita.
   set {
     name  = "newrelic-pixie.enabled"
     value = "false"
   }
 
-  depends_on = [kind_cluster.this]
+  depends_on = [aws_eks_node_group.this]
 }
