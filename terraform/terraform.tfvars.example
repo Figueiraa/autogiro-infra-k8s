@@ -3,9 +3,19 @@
 cluster_name = "autogiro"
 namespace    = "autogiro"
 
-# Porta local do gateway. Todas as chamadas à API passam por ela.
-kong_http_port  = 8000
-kong_admin_port = 8001
+# ─── AWS / EKS ───────────────────────────────────────────────────────────────
+# As credenciais NÃO vão aqui: use variáveis de ambiente (AWS_ACCESS_KEY_ID,
+# AWS_SECRET_ACCESS_KEY) ou um perfil do AWS CLI.
+aws_region         = "us-east-1"
+kubernetes_version = "1.31"
+
+# Graviton (ARM): as imagens da aplicação precisam ter build arm64.
+node_instance_type = "t4g.small"
+
+# O HPA escala pods (2 a 10); estes valores escalam os nós que os sustentam.
+node_min_size     = 2
+node_max_size     = 4
+node_desired_size = 2
 
 # Mesmo segredo configurado em autogiro-auth e autogiro-app.
 jwt_secret = "gere-com-python-c-import-secrets-print-secrets-token_urlsafe-48"
