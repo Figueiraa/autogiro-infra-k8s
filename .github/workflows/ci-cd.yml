@@ -17,6 +17,9 @@ concurrency:
 
 env:
   TF_IN_AUTOMATION: "true"
+  # Nunca perguntar nada no terminal: com o backend `cloud` declarado, um prompt
+  # de credencial travaria o job em vez de falhar.
+  TF_INPUT: "0"
 
 jobs:
   # ─── CI: validação e análise estática do Terraform ─────────────────────────
