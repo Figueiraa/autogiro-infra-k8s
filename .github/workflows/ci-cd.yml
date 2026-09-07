@@ -61,11 +61,13 @@ jobs:
           soft_fail: true
           output_format: cli
 
-  # ─── Teste de integração: sobe o cluster de verdade ────────────────────────
-  # O runner do GitHub tem Docker, então o kind funciona. Valida que o cluster,
-  # o Kong e o HPA sobem antes de qualquer deploy real.
-  integration:
-    name: Cluster smoke test
+  # ─── Plan: mostra o que mudaria, sem criar nada ────────────────────────────
+  # Quando o cluster era kind local, este job subia um cluster inteiro a cada
+  # execução — era grátis. Com o EKS isso custaria ~US$0,60 e 30 minutos por PR,
+  # então o smoke test deu lugar a um `plan`, que valida a configuração contra a
+  # API real da AWS sem provisionar recurso nenhum.
+  plan:
+    name: Terraform Plan
     needs: validate
     runs-on: ubuntu-latest
     steps:
@@ -75,59 +77,81 @@ jobs:
         with:
           terraform_version: "1.10.3"
 
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
       - name: Terraform Init
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+          TF_WORKSPACE: autogiro-infra-k8s-${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
         run: terraform -chdir=terraform init
 
-      - name: Criar cluster e instalar Kong
+      - name: Terraform Plan
         env:
-          TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET || 'ci-smoke-test-secret-value' }}
-          # Sem license key: o agente do New Relic não é instalado no CI.
-          TF_VAR_new_relic_license_key: ""
-        run: terraform -chdir=terraform apply -auto-approve
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+          TF_WORKSPACE: autogiro-infra-k8s-${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
+          TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
+          TF_VAR_new_relic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          TF_VAR_new_relic_account_id: ${{ secrets.NEW_RELIC_ACCOUNT_ID }}
+          TF_VAR_new_relic_api_key: ${{ secrets.NEW_RELIC_API_KEY }}
+        run: terraform -chdir=terraform plan -no-color
 
-      - name: Verificar o cluster
-        run: |
-          kubectl get nodes
-          kubectl -n kong rollout status deployment/kong-kong --timeout=300s
-          kubectl -n kube-system rollout status deployment/metrics-server --timeout=180s
-
-          echo "Verificando que o proxy do Kong responde"
-          curl -fsS -o /dev/null -w "Kong respondeu com HTTP %{http_code}\n" \
-            http://localhost:8000 || true
-
-      - name: Destruir o cluster
-        if: always()
-        env:
-          TF_VAR_jwt_secret: "ci-smoke-test-secret-value"
-          TF_VAR_new_relic_license_key: ""
-        run: terraform -chdir=terraform destroy -auto-approve
-
-  # ─── CD: aplica no cluster real ────────────────────────────────────────────
-  # O cluster do AutoGiro é local, então o deploy exige um self-hosted runner
-  # na máquina que o hospeda. Habilite com a variável DEPLOY_ENABLED=true.
+  # ─── CD: provisiona o cluster na AWS ───────────────────────────────────────
+  # Com o cluster na nuvem, o runner hospedado do GitHub alcança a AWS
+  # normalmente — o self-hosted runner deixou de ser necessário.
+  #
+  # O apply continua protegido por DEPLOY_ENABLED: criar um EKS custa dinheiro,
+  # então subir o cluster é uma decisão explícita, não efeito colateral de um push.
   deploy:
     name: Deploy cluster
-    needs: integration
+    needs: plan
     if: github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
-    runs-on: [self-hosted, autogiro]
+    runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
     steps:
       - uses: actions/checkout@v4
 
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.10.3"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
       - name: Terraform Init
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+          TF_WORKSPACE: autogiro-infra-k8s-${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
         run: terraform -chdir=terraform init
 
       - name: Terraform Apply
         env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+          TF_WORKSPACE: autogiro-infra-k8s-${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
           TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
           TF_VAR_new_relic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
+          TF_VAR_new_relic_account_id: ${{ secrets.NEW_RELIC_ACCOUNT_ID }}
+          TF_VAR_new_relic_api_key: ${{ secrets.NEW_RELIC_API_KEY }}
         run: terraform -chdir=terraform apply -auto-approve
 
       - name: Resumo
+        env:
+          TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+          TF_WORKSPACE: autogiro-infra-k8s-${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
         run: |
           {
             echo "### Cluster provisionado"
             echo ""
-            echo "- Gateway: $(terraform -chdir=terraform output -raw kong_proxy_url)"
-            echo "- Namespace: $(terraform -chdir=terraform output -raw namespace)"
+            echo "- Cluster: $(terraform -chdir=terraform output -raw cluster_name)"
+            echo "- Gateway: $(terraform -chdir=terraform output -raw kong_proxy_url 2>/dev/null || echo 'aguardando o Load Balancer')"
+            echo ""
+            echo "Lembre-se de destruir o cluster ao terminar: ele cobra por hora."
           } >> "$GITHUB_STEP_SUMMARY"
