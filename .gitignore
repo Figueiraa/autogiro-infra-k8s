@@ -12,3 +12,7 @@ kubeconfig
 
 # Credenciais
 .env
+
+# Scripts locais com credenciais preenchidas — nunca versionar.
+subir-cluster.ps1
+destruir-cluster.ps1
