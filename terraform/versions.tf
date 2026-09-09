@@ -2,9 +2,9 @@ terraform {
   required_version = ">= 1.5"
 
   required_providers {
-    kind = {
-      source  = "tehcyx/kind"
-      version = "~> 0.5"
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.70"
     }
     kubernetes = {
       source  = "hashicorp/kubernetes"
@@ -19,6 +19,11 @@ terraform {
     kubectl = {
       source  = "gavinbunney/kubectl"
       version = "~> 1.14"
+    }
+    # Dashboards e condicoes de alerta do New Relic (NerdGraph).
+    newrelic = {
+      source  = "newrelic/newrelic"
+      version = "~> 3.30"
     }
   }
 }
