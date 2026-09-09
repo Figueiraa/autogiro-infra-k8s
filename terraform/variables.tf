@@ -1,3 +1,18 @@
+variable "kong_node_port" {
+  description = <<-EOT
+    Porta fixa do NodePort do proxy do Kong. Precisa estar na faixa que o
+    Kubernetes reserva para NodePort (30000-32767) e ser liberada no security
+    group dos nos.
+  EOT
+  type        = number
+  default     = 30080
+
+  validation {
+    condition     = var.kong_node_port >= 30000 && var.kong_node_port <= 32767
+    error_message = "O NodePort precisa estar entre 30000 e 32767."
+  }
+}
+
 variable "cluster_name" {
   description = "Nome do cluster EKS. Também prefixa VPC, subnets e roles IAM."
   type        = string

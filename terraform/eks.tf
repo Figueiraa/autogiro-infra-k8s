@@ -217,3 +217,33 @@ resource "aws_eks_node_group" "this" {
     Name = "${var.cluster_name}-nodes"
   }
 }
+
+# ─── Acesso ao gateway ───────────────────────────────────────────────────────
+# O EKS cria um security group proprio para os nos, que por padrao so aceita
+# trafego interno do cluster. Como o Kong e exposto por NodePort (esta conta nao
+# permite criar Load Balancers), a porta precisa ser liberada explicitamente.
+#
+# `cidr_blocks = ["0.0.0.0/0"]` e o que torna o gateway publicamente acessivel —
+# e o que o enunciado pede de um API Gateway. As rotas de negocio atras dele
+# seguem protegidas pelo plugin JWT do Kong; o que fica aberto e a porta, nao a API.
+resource "aws_security_group_rule" "kong_node_port" {
+  type              = "ingress"
+  security_group_id = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
+  from_port         = var.kong_node_port
+  to_port           = var.kong_node_port
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  description       = "Proxy do Kong exposto por NodePort"
+}
+
+# Instancias do node group, para expor os IPs publicos nos outputs. Depende do
+# node group estar pronto, senao a consulta volta vazia.
+data "aws_instances" "nodes" {
+  instance_tags = {
+    "eks:cluster-name" = aws_eks_cluster.this.name
+  }
+
+  instance_state_names = ["running"]
+
+  depends_on = [aws_eks_node_group.this]
+}

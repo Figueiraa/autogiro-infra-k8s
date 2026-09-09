@@ -41,15 +41,7 @@ data "kubernetes_service" "kong_proxy" {
   depends_on = [helm_release.kong]
 }
 
-output "kong_proxy_hostname" {
-  description = "Hostname do LoadBalancer (NLB) do proxy do Kong."
-  value       = try(data.kubernetes_service.kong_proxy.status[0].load_balancer[0].ingress[0].hostname, "")
-}
 
-output "kong_proxy_url" {
-  description = "URL do gateway. Todas as chamadas à API passam por aqui."
-  value       = try("http://${data.kubernetes_service.kong_proxy.status[0].load_balancer[0].ingress[0].hostname}", "")
-}
 
 output "kong_admin_port_forward" {
   description = "A Admin API é ClusterIP por segurança; use este comando para acessá-la."
@@ -61,4 +53,20 @@ output "new_relic_enabled" {
   # Deriva da contagem do recurso, e não da variável sensível: assim o valor
   # é um booleano comum, sem herdar a marcação de sensibilidade da license key.
   value = length(helm_release.new_relic) > 0
+}
+
+# Endereco publico do gateway. Com o Kong em NodePort, o ponto de entrada e o IP
+# publico de qualquer no do cluster na porta do NodePort — nao ha DNS estavel,
+# porque esta conta AWS nao permite criar Load Balancers.
+output "kong_proxy_url" {
+  description = "URL publica do proxy do Kong (IP do primeiro no + NodePort)."
+  value = try(
+    "http://${data.aws_instances.nodes.public_ips[0]}:${var.kong_node_port}",
+    "aguardando os nos ficarem prontos"
+  )
+}
+
+output "kong_node_ips" {
+  description = "IPs publicos de todos os nos; qualquer um atende o gateway."
+  value       = try(data.aws_instances.nodes.public_ips, [])
 }
