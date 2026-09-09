@@ -59,9 +59,11 @@ status:
 	@echo "-- HPA --"
 	@kubectl -n autogiro get hpa
 
+# Com o Kong em NodePort o endereco publico e o IP do no na 30080: nao existe
+# hostname de balanceador para ler, entao `loadBalancer.ingress` fica sempre
+# vazio. Os dois nos atendem; este alvo devolve o primeiro.
 gateway:
-	@kubectl -n kong get svc kong-kong-proxy \
-		-o jsonpath='{.status.loadBalancer.ingress[0].hostname}' && echo ""
+	@echo "http://$$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}'):30080"
 
 # A Admin API do Kong e ClusterIP de proposito: expo-la na internet daria
 # controle total do gateway a qualquer um. O acesso e por port-forward.
