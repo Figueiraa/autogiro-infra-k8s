@@ -146,10 +146,22 @@ jobs:
   #
   # O apply continua protegido por DEPLOY_ENABLED: criar um EKS custa dinheiro,
   # então subir o cluster é uma decisão explícita, não efeito colateral de um push.
+  #
+  # E só em `develop`. O motivo é concreto: o workspace de prod tem state próprio,
+  # então um apply nele não reaproveita o cluster de homolog — tenta criar um
+  # segundo, do zero. Isso falha, porque as IAM Roles são globais na conta
+  # (`EntityAlreadyExists`), mas só depois de já ter criado a VPC, as subnets e o
+  # internet gateway, que ficam órfãos cobrando fora de qualquer state. Aconteceu
+  # em 09/09 e a limpeza foi manual.
+  #
+  # Um ambiente de produção de verdade seria uma conta AWS separada, com IAM
+  # próprio; dentro de uma única conta, dois clusters completos dobrariam o custo
+  # (~US$107/mês) sem acrescentar nada à entrega. O `plan` continua rodando em
+  # `main`, então a configuração segue validada contra a AWS real nos dois ramos.
   deploy:
     name: Deploy cluster
     needs: plan
-    if: github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
+    if: github.ref_name == 'develop' && github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: ${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
     steps:
