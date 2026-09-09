@@ -98,7 +98,11 @@ jobs:
           TF_VAR_new_relic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
           TF_VAR_new_relic_account_id: ${{ secrets.NEW_RELIC_ACCOUNT_ID }}
           TF_VAR_new_relic_api_key: ${{ secrets.NEW_RELIC_API_KEY }}
-        run: terraform -chdir=terraform plan -no-color
+        # `-lock=false`: o plan so le o state, nao escreve. Sem isso, o push e o
+        # pull_request do mesmo commit disparam dois planos simultaneos no mesmo
+        # workspace e um derruba o outro com "state lock". O apply continua com
+        # lock, que e onde ele protege de fato.
+        run: terraform -chdir=terraform plan -no-color -lock=false
 
   # ─── CD: provisiona o cluster na AWS ───────────────────────────────────────
   # Com o cluster na nuvem, o runner hospedado do GitHub alcança a AWS

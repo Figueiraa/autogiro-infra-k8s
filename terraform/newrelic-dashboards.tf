@@ -564,4 +564,125 @@ resource "newrelic_one_dashboard" "autogiro" {
       }
     }
   }
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # API Gateway
+  #
+  # Métricas publicadas pelo próprio Kong, e não pela aplicação. A distinção
+  # importa: a aplicação só enxerga o que chegou até ela, enquanto o gateway
+  # enxerga também o que barrou na borda. Um 401 por token ausente aparece aqui
+  # com `source = 'kong'` e não existe em nenhuma métrica do autogiro-api.
+  # ═══════════════════════════════════════════════════════════════════════════
+  page {
+    name        = "API Gateway (Kong)"
+    description = "Tráfego, latência e bloqueios vistos do gateway — o que a aplicação não enxerga."
+
+    # ── Requisições por código HTTP ─────────────────────────────────────────
+    widget_line {
+      title  = "Requisições por código HTTP"
+      row    = 1
+      column = 1
+      width  = 8
+      height = 3
+
+      nrql_query {
+        account_id = var.new_relic_account_id
+        query      = <<-EOT
+          SELECT rate(sum(kong_http_requests_total), 1 minute)
+          FROM Metric
+          WHERE metricName = 'kong_http_requests_total'
+          FACET code
+          SINCE 3 hours ago
+          TIMESERIES
+        EOT
+      }
+    }
+
+    # `source` separa quem respondeu: 'kong' é resposta do gateway (o plugin de
+    # JWT rejeitando), 'service' é resposta da aplicação. É a leitura direta de
+    # "o gateway está protegendo as rotas".
+    widget_billboard {
+      title  = "Bloqueados pelo gateway (source = kong)"
+      row    = 1
+      column = 9
+      width  = 4
+      height = 3
+
+      nrql_query {
+        account_id = var.new_relic_account_id
+        query      = <<-EOT
+          SELECT sum(kong_http_requests_total) AS 'Barrados na borda'
+          FROM Metric
+          WHERE metricName = 'kong_http_requests_total'
+            AND source = 'kong'
+          SINCE 3 hours ago
+        EOT
+      }
+    }
+
+    # ── Latência: gateway vs. aplicação ─────────────────────────────────────
+    # A separação entre as duas responde "quem está lento": `kong_latency` é o
+    # tempo gasto dentro do gateway (roteamento e plugins), `upstream_latency` é
+    # o tempo que a aplicação levou para responder.
+    widget_line {
+      title  = "Latência no gateway vs. no upstream (ms)"
+      row    = 4
+      column = 1
+      width  = 8
+      height = 3
+
+      nrql_query {
+        account_id = var.new_relic_account_id
+        query      = <<-EOT
+          SELECT average(kong_kong_latency_ms_sum) / average(kong_kong_latency_ms_count) AS 'Gateway',
+                 average(kong_upstream_latency_ms_sum) / average(kong_upstream_latency_ms_count) AS 'Aplicação'
+          FROM Metric
+          SINCE 3 hours ago
+          TIMESERIES
+        EOT
+      }
+    }
+
+    widget_billboard {
+      title  = "Conexões ativas no Kong"
+      row    = 4
+      column = 9
+      width  = 4
+      height = 3
+
+      nrql_query {
+        account_id = var.new_relic_account_id
+        query      = <<-EOT
+          SELECT latest(kong_nginx_connections_total) AS 'Ativas'
+          FROM Metric
+          WHERE metricName = 'kong_nginx_connections_total'
+            AND state = 'active'
+          SINCE 10 minutes ago
+        EOT
+      }
+    }
+
+    # ── Tráfego por rota ────────────────────────────────────────────────────
+    # Separa a rota pública (/health, /docs) da protegida (/api/v1), mostrando
+    # que são dois Ingresses com políticas diferentes no mesmo gateway.
+    widget_table {
+      title  = "Tráfego por rota e código"
+      row    = 7
+      column = 1
+      width  = 12
+      height = 3
+
+      nrql_query {
+        account_id = var.new_relic_account_id
+        query      = <<-EOT
+          SELECT sum(kong_http_requests_total) AS 'Requisições'
+          FROM Metric
+          WHERE metricName = 'kong_http_requests_total'
+          FACET route, code, source
+          SINCE 3 hours ago
+          LIMIT 30
+        EOT
+      }
+    }
+  }
 }
