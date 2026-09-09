@@ -171,6 +171,22 @@ resource "helm_release" "new_relic" {
     value = "true"
   }
 
+  # Desliga o integrations_filter do agente Prometheus.
+  #
+  # Por padrao ele mantem apenas alvos cuja aplicacao esteja numa lista de
+  # integracoes conhecidas (redis, coredns, nginx, traefik...). Os pods do
+  # autogiro-api eram descobertos corretamente — com a annotation
+  # prometheus.io/scrape e a porta certa — e descartados no relabel, porque
+  # "autogiro-api" nao consta nessa lista. As metricas autogiro_* nunca
+  # chegavam ao New Relic, ainda que /metrics respondesse 200 no cluster.
+  #
+  # Com o filtro desligado, qualquer pod anotado com prometheus.io/scrape passa
+  # a ser coletado, que e o comportamento esperado de descoberta por annotation.
+  set {
+    name  = "newrelic-prometheus-agent.config.kubernetes.integrations_filter.enabled"
+    value = "false"
+  }
+
   # O Pixie exige mais recursos do que os nos t4g.small comportam, e o eBPF
   # dele elevaria o volume ingerido bem acima da cota gratuita.
   set {
