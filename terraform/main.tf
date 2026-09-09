@@ -160,6 +160,17 @@ resource "helm_release" "new_relic" {
     value = "true"
   }
 
+  # O nri-bundle inclui o coletor nrk8s-ksm, que consulta o kube-state-metrics
+  # para reportar o estado dos objetos do Kubernetes (deployments, replicasets,
+  # HPA). O EKS nao traz o kube-state-metrics, entao sem instala-lo o coletor
+  # entra em CrashLoopBackOff com "timeout discovering endpoints".
+  #
+  # As metricas de CPU e memoria nao dependem disto — vem do nrk8s-kubelet.
+  set {
+    name  = "kube-state-metrics.enabled"
+    value = "true"
+  }
+
   # O Pixie exige mais recursos do que os nos t4g.small comportam, e o eBPF
   # dele elevaria o volume ingerido bem acima da cota gratuita.
   set {
