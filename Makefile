@@ -1,20 +1,30 @@
-# Atalhos para operar o cluster local do AutoGiro.
+# Atalhos para operar o cluster EKS do AutoGiro.
 #
-# O cluster roda na máquina do desenvolvedor, então o `apply` não acontece em
-# runner hospedado — a pipeline valida, e o deploy é feito por aqui (ou por um
-# self-hosted runner).
+# O cluster e gerenciado na AWS, entao tanto a pipeline quanto estes comandos
+# alcancam a API do cluster de fora. A pipeline valida com `plan` e provisiona
+# com `apply` quando DEPLOY_ENABLED=true.
+#
+# ATENCAO: o cluster cobra ~US$0,18/h enquanto existe. Use `make destroy` ao
+# terminar — ver CUSTO.md.
+#
+# Pre-requisitos: `aws configure` feito, `terraform login` executado e a
+# variavel TF_WORKSPACE apontando para o ambiente desejado:
+#
+#   $env:TF_WORKSPACE = "autogiro-infra-k8s-homolog"
 
 TF := terraform -chdir=terraform
 
-.PHONY: help init plan apply destroy status kong-routes
+.PHONY: help init plan apply destroy status kubeconfig kong-routes gateway
 
 help:
-	@echo "make init     - inicializa o Terraform"
-	@echo "make plan     - mostra o plano de mudanças"
-	@echo "make apply    - cria o cluster, o Kong e o agente do New Relic"
-	@echo "make destroy  - remove o cluster inteiro"
-	@echo "make status   - estado dos pods e do HPA"
-	@echo "make kong-routes - rotas e plugins registrados no Kong"
+	@echo "make init       - inicializa o Terraform"
+	@echo "make plan       - mostra o plano de mudancas"
+	@echo "make apply      - cria o cluster, o Kong e o agente do New Relic"
+	@echo "make destroy    - remove o cluster inteiro e para a cobranca"
+	@echo "make kubeconfig - aponta o kubectl para o cluster"
+	@echo "make status     - estado dos nos, pods e do HPA"
+	@echo "make gateway    - hostname publico do Kong"
+	@echo "make kong-routes- rotas e plugins registrados no Kong"
 
 init:
 	$(TF) init
@@ -26,17 +36,38 @@ apply:
 	$(TF) apply
 
 destroy:
+	@echo "Removendo os Services primeiro, para a AWS apagar o Load Balancer..."
+	-@kubectl -n kong delete svc --all --timeout=120s
+	-@kubectl -n autogiro delete svc --all --timeout=120s
+	@echo "Aguardando a AWS remover o balanceador (60s)..."
+	@sleep 60
 	$(TF) destroy
 
+kubeconfig:
+	aws eks update-kubeconfig --name autogiro --region us-east-1
+
 status:
-	@echo "── Nós ──"
+	@echo "-- Nos --"
 	@kubectl get nodes
-	@echo "\n── Pods (autogiro) ──"
+	@echo ""
+	@echo "-- Pods (autogiro) --"
 	@kubectl -n autogiro get pods
-	@echo "\n── Pods (kong) ──"
+	@echo ""
+	@echo "-- Pods (kong) --"
 	@kubectl -n kong get pods
-	@echo "\n── HPA ──"
+	@echo ""
+	@echo "-- HPA --"
 	@kubectl -n autogiro get hpa
 
+gateway:
+	@kubectl -n kong get svc kong-kong-proxy \
+		-o jsonpath='{.status.loadBalancer.ingress[0].hostname}' && echo ""
+
+# A Admin API do Kong e ClusterIP de proposito: expo-la na internet daria
+# controle total do gateway a qualquer um. O acesso e por port-forward.
 kong-routes:
-	@curl -s http://localhost:8001/routes | python -m json.tool
+	@echo "Abrindo port-forward para a Admin API do Kong..."
+	@kubectl -n kong port-forward svc/kong-kong-admin 8001:8001 & \
+		sleep 4; \
+		curl -s http://localhost:8001/routes | python -m json.tool; \
+		kill %1
