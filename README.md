@@ -47,11 +47,11 @@ observabilidade.
    │   │   │ AZ us-east-1a        │    │ AZ us-east-1b        │         │ │
    │   │   │ pública (map IP)     │    │ pública (map IP)     │         │ │
    │   │   │ SG: 30080 aberta     │    │ SG: 30080 aberta     │         │ │
-   │   │   │ nos com IP publico   │    │ nos com IP publico   │         │ │
+   │   │   │ nós com IP público   │    │ nós com IP público   │         │ │
    │   │   └──────────┬───────────┘    └──────────┬───────────┘         │ │
    │   │              │                           │                     │ │
    │   │              │   (sem Load Balancer:     │                     │ │
-   │   │              │    a conta nao permite)   │                     │ │
+   │   │              │    a conta não permite)   │                     │ │
    │   │   ┌──────────▼───────────────────────────▼───────────┐         │ │
    │   │   │ EKS control plane "autogiro" (endpoint público)  │         │ │
    │   │   │ logs do cluster desabilitados                   │         │ │
@@ -64,7 +64,7 @@ observabilidade.
    │   │   │                                                        │   │ │
    │   │   │  ┌──────────────────────────────────────────┐          │   │ │
    │   │   │  │ ns: kong                                 │          │   │ │
-   │   │   │  │  kong-kong-proxy  Service NodePort 30080 │◄─ trafego│   │ │
+   │   │   │  │  kong-kong-proxy  Service NodePort 30080 │◄─ tráfego│   │ │
    │   │   │  │  kong-kong-admin  Service ClusterIP      │          │   │ │
    │   │   │  │  plugin jwt + KongConsumer               │          │   │ │
    │   │   │  └──────────────┬───────────────────────────┘          │   │ │
@@ -103,7 +103,7 @@ ficou claro que essa escolha feria o requisito. Os manifests, o HPA, as probes e
 continuaram os mesmos; mudou o substrato.
 
 O custo é controlado pela rotina de **subir e destruir**: o EKS cobra por hora de existência do
-cluster, não por uso, e o total fica em **~US$ 0,18/h** — poucos dólares ao longo da entrega.
+cluster, não por uso, e o total fica em **~US$ 0,15/h** — poucos dólares ao longo da entrega.
 A tabela completa, os cenários de uso e o checklist pós-`destroy` estão em [CUSTO.md](CUSTO.md).
 
 Decisões de economia, todas registradas no ponto onde são feitas:
@@ -113,7 +113,7 @@ Decisões de economia, todas registradas no ponto onde são feitas:
 | **Sem NAT Gateway** — nós em subnet pública | O NAT custa ~US$ 0,045/h mais tráfego processado; o Internet Gateway não tem custo por hora | `terraform/eks.tf` |
 | **Logs do control plane desabilitados** (`enabled_cluster_log_types = []`) | Cada tipo vira um log group no CloudWatch, cobrado por GB ingerido e armazenado; a observabilidade vem do New Relic, de dentro do cluster | `terraform/eks.tf` |
 | **`t4g.small` (Graviton/ARM)** | ~US$ 0,0168/h contra ~US$ 0,0208/h da `t3.small` x86 — perto de 20% a menos. Exigiu build **multi-arch** (arm64) da imagem da aplicação e AMI `AL2023_ARM_64_STANDARD` nos nós | `terraform/eks.tf` |
-| **NodePort em vez de Load Balancer** | Mais barato por hora e suficiente, já que o TLS não é terminado no balanceador | `terraform/main.tf` |
+| **NodePort em vez de Load Balancer** | Não foi escolha: a conta responde `OperationNotPermitted` a qualquer Load Balancer. Perde-se o DNS estável e o balanceamento entre nós; o roteamento, os plugins e a validação de JWT são idênticos. De quebra, economiza os US$ 0,031/h do NLB | `terraform/main.tf` |
 | **Recursos nativos `aws_eks_*`** em vez do módulo `terraform-aws-modules/eks` | O módulo cria por padrão subnets privadas com NAT Gateway, KMS próprio e log groups no CloudWatch — tudo cobrado à parte | `terraform/eks.tf` |
 | **Pixie desabilitado** no nri-bundle | Exige mais recursos do que os nós `t4g.small` comportam e o eBPF elevaria o volume ingerido acima da cota gratuita | `terraform/main.tf` |
 
@@ -144,7 +144,7 @@ Policies IAM necessárias no usuário que roda o Terraform:
 | `AmazonEKSClusterPolicy` · `AmazonEKSServicePolicy` | Criar e administrar o cluster |
 | `AmazonEC2FullAccess` | VPC, subnets, Internet Gateway, route tables, node group, EBS |
 | `IAMFullAccess` (ou permissão de `iam:CreateRole`, `AttachRolePolicy`, `PassRole`) | Criar as roles do control plane e dos nós |
-| `ElasticLoadBalancingFullAccess` | Concedida antes de descobrir a restricao da conta; hoje nao chega a ser usada |
+| `ElasticLoadBalancingFullAccess` | Concedida antes de descobrir a restrição da conta; hoje não chega a ser usada |
 | `eks:*` | `CreateCluster`, `CreateNodegroup`, `DescribeCluster`, `GetToken` |
 
 O state fica no **HCP Terraform** (`terraform/backend.tf`, organização `autogiro`), com o
@@ -297,7 +297,7 @@ O workspace do HCP é escolhido pelo branch: `main` → `-prod`, qualquer outro 
 
 ## Ao terminar de usar
 
-> **O cluster cobra por hora de existência, não por uso: ~US$ 0,18/h, US$ 4,28 por dia se ficar
+> **O cluster cobra por hora de existência, não por uso: ~US$ 0,15/h, US$ 3,55 por dia se ficar
 > ligado 24h.** Destrua ao terminar a sessão.
 
 ```powershell
