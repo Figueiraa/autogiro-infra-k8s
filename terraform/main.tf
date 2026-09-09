@@ -61,18 +61,25 @@ resource "helm_release" "kong" {
   }
 
   # No EKS o proxy vira um Service do tipo LoadBalancer: a AWS provisiona um
-  # Network Load Balancer com hostname publico, que e o unico ponto de entrada
-  # da aplicacao. No kind isto era um NodePort, porque kind nao provisiona LB.
+  # NodePort com porta fixa, e nao LoadBalancer.
+  #
+  # A intencao original era um Network Load Balancer, mas esta conta AWS responde
+  # `OperationNotPermitted: This AWS account currently does not support creating
+  # load balancers` — a mesma restricao de plataforma de conta nova que impede a
+  # invocacao publica da Function URL da Lambda.
+  #
+  # A alternativa mantem o gateway publicamente acessivel: os nos do EKS estao em
+  # subnet publica e tem IP proprio, entao o Kong responde em
+  # http://<ip-publico-do-no>:30080. Perde-se o balanceamento e o DNS estavel do
+  # NLB; o roteamento, os plugins e a validacao de JWT sao identicos.
   set {
     name  = "proxy.type"
-    value = "LoadBalancer"
+    value = "NodePort"
   }
 
-  # NLB (camada 4) em vez do Classic Load Balancer padrao: mais barato por hora
-  # e suficiente, ja que o TLS nao e terminado no balanceador.
   set {
-    name  = "proxy.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
-    value = "nlb"
+    name  = "proxy.http.nodePort"
+    value = var.kong_node_port
   }
 
   set {
@@ -151,6 +158,33 @@ resource "helm_release" "new_relic" {
   set {
     name  = "newrelic-prometheus-agent.enabled"
     value = "true"
+  }
+
+  # O nri-bundle inclui o coletor nrk8s-ksm, que consulta o kube-state-metrics
+  # para reportar o estado dos objetos do Kubernetes (deployments, replicasets,
+  # HPA). O EKS nao traz o kube-state-metrics, entao sem instala-lo o coletor
+  # entra em CrashLoopBackOff com "timeout discovering endpoints".
+  #
+  # As metricas de CPU e memoria nao dependem disto — vem do nrk8s-kubelet.
+  set {
+    name  = "kube-state-metrics.enabled"
+    value = "true"
+  }
+
+  # Desliga o integrations_filter do agente Prometheus.
+  #
+  # Por padrao ele mantem apenas alvos cuja aplicacao esteja numa lista de
+  # integracoes conhecidas (redis, coredns, nginx, traefik...). Os pods do
+  # autogiro-api eram descobertos corretamente — com a annotation
+  # prometheus.io/scrape e a porta certa — e descartados no relabel, porque
+  # "autogiro-api" nao consta nessa lista. As metricas autogiro_* nunca
+  # chegavam ao New Relic, ainda que /metrics respondesse 200 no cluster.
+  #
+  # Com o filtro desligado, qualquer pod anotado com prometheus.io/scrape passa
+  # a ser coletado, que e o comportamento esperado de descoberta por annotation.
+  set {
+    name  = "newrelic-prometheus-agent.config.kubernetes.integrations_filter.enabled"
+    value = "false"
   }
 
   # O Pixie exige mais recursos do que os nos t4g.small comportam, e o eBPF

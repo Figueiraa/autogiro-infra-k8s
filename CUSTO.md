@@ -9,21 +9,24 @@
 |---|---|
 | Control plane EKS | 0,100 |
 | 2× t4g.small (Graviton) | 0,034 |
-| NLB do Kong | 0,031 |
 | EBS 2×20 GB gp3 | 0,004 |
 | IPs públicos dos nós | 0,010 |
-| **Total** | **~0,178** |
+| **Total** | **~0,148** |
 
-**US$ 4,28 por dia** se ficar ligado 24h.
+**US$ 3,55 por dia** se ficar ligado 24h.
+
+Não há custo de Load Balancer: esta conta não permite criá-los, então o Kong entra como
+NodePort na porta 30080 e o ponto de entrada é o IP público de qualquer nó. A restrição
+economiza US$ 0,031/h — o único efeito colateral bom dela.
 
 ## Cenários reais
 
 | Uso | Custo |
 |---|---|
-| 4h/dia por 2 dias | US$ 1,43 |
-| 6h/dia por 2 dias | US$ 2,14 |
-| Uma sessão de 3h para gravar o vídeo | US$ 0,54 |
-| Ligado 8 dias ininterruptos | US$ 34,27 |
+| 4h/dia por 2 dias | US$ 1,18 |
+| 6h/dia por 2 dias | US$ 1,78 |
+| Uma sessão de 3h para gravar o vídeo | US$ 0,44 |
+| Ligado 8 dias ininterruptos | US$ 28,42 |
 
 ## Fluxo recomendado
 
@@ -41,27 +44,28 @@ Como o state vive no HCP Terraform, o `apply` reproduz o mesmo cluster a cada ve
 
 ## Depois de cada destroy, confira
 
-O `destroy` remove o que o Terraform criou. Mas **o Load Balancer é criado pelo Kubernetes**,
-não pelo Terraform — quando o Helm instala o Kong com `proxy.type: LoadBalancer`, é o
-cloud-controller da AWS que provisiona o NLB.
+O `destroy` remove o que o Terraform criou, mas alguns recursos são criados *pelo
+Kubernetes* e não pelo Terraform — o cloud-controller da AWS provisiona volumes e
+balanceadores em resposta a objetos do cluster. Se o cluster morre antes deles, sobram
+órfãos cobrando em silêncio.
 
-Se o Service for removido junto com o cluster, a AWS costuma limpar o NLB. Mas nem sempre:
-um NLB órfão continua cobrando **US$ 0,03/h** — US$ 21/mês — silenciosamente.
+Como esta conta não permite Load Balancer, o risco aqui é menor do que o normal: sobra
+verificar volumes e IPs. Ainda assim, vale o hábito — em uma conta sem essa restrição um
+NLB órfão custa US$ 21/mês sem aparecer em lugar nenhum.
 
 **Verifique após o destroy:**
 
-1. Load Balancers → https://console.aws.amazon.com/ec2/home#LoadBalancers
-2. Volumes EBS não anexados → https://console.aws.amazon.com/ec2/home#Volumes
-3. Elastic IPs não associados → https://console.aws.amazon.com/ec2/home#Elastic-IPs
+1. Volumes EBS não anexados → https://console.aws.amazon.com/ec2/home#Volumes
+2. Elastic IPs não associados → https://console.aws.amazon.com/ec2/home#Elastic-IPs
+3. Load Balancers → https://console.aws.amazon.com/ec2/home#LoadBalancers (deve estar vazio)
 
-Uma forma mais segura de destruir, que remove o NLB antes:
+O `make destroy` já remove os Services antes do `terraform destroy`, justamente para dar à
+AWS a chance de limpar o que ela criou:
 
 ```powershell
-# 1. Remove o Kong primeiro (e com ele o Service que criou o NLB)
-kubectl -n kong delete svc --all
-# 2. Espera a AWS remover o balanceador (~1 min)
-# 3. Aí sim destrói o resto
-terraform -chdir=terraform destroy -auto-approve
+kubectl -n kong delete svc --all      # 1. remove os Services
+# 2. aguarda a AWS reagir (~1 min)
+terraform -chdir=terraform destroy -auto-approve   # 3. destrói o resto
 ```
 
 ## Alarme de orçamento
