@@ -61,18 +61,25 @@ resource "helm_release" "kong" {
   }
 
   # No EKS o proxy vira um Service do tipo LoadBalancer: a AWS provisiona um
-  # Network Load Balancer com hostname publico, que e o unico ponto de entrada
-  # da aplicacao. No kind isto era um NodePort, porque kind nao provisiona LB.
+  # NodePort com porta fixa, e nao LoadBalancer.
+  #
+  # A intencao original era um Network Load Balancer, mas esta conta AWS responde
+  # `OperationNotPermitted: This AWS account currently does not support creating
+  # load balancers` — a mesma restricao de plataforma de conta nova que impede a
+  # invocacao publica da Function URL da Lambda.
+  #
+  # A alternativa mantem o gateway publicamente acessivel: os nos do EKS estao em
+  # subnet publica e tem IP proprio, entao o Kong responde em
+  # http://<ip-publico-do-no>:30080. Perde-se o balanceamento e o DNS estavel do
+  # NLB; o roteamento, os plugins e a validacao de JWT sao identicos.
   set {
     name  = "proxy.type"
-    value = "LoadBalancer"
+    value = "NodePort"
   }
 
-  # NLB (camada 4) em vez do Classic Load Balancer padrao: mais barato por hora
-  # e suficiente, ja que o TLS nao e terminado no balanceador.
   set {
-    name  = "proxy.annotations.service\\.beta\\.kubernetes\\.io/aws-load-balancer-type"
-    value = "nlb"
+    name  = "proxy.http.nodePort"
+    value = var.kong_node_port
   }
 
   set {
