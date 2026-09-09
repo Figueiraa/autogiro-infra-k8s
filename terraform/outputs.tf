@@ -29,20 +29,6 @@ output "namespace" {
 }
 
 # ─── Kong ────────────────────────────────────────────────────────────────────
-# O hostname do NLB é atribuído pela AWS depois que o Service é criado, então
-# é lido do Service e não de um recurso do Terraform. É o endereço usado no
-# host do Ingress da aplicação e na demonstração da entrega.
-data "kubernetes_service" "kong_proxy" {
-  metadata {
-    name      = "kong-kong-proxy"
-    namespace = kubernetes_namespace.kong.metadata[0].name
-  }
-
-  depends_on = [helm_release.kong]
-}
-
-
-
 output "kong_admin_port_forward" {
   description = "A Admin API é ClusterIP por segurança; use este comando para acessá-la."
   value       = "kubectl port-forward -n kong svc/kong-kong-admin 8001:8001"
