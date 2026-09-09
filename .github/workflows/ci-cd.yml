@@ -53,13 +53,49 @@ jobs:
           tflint --chdir=terraform --recursive
 
       # Análise de segurança da infraestrutura como código.
+      #
+      # `soft_fail: false`: o scanner reprova o build. Um scanner que só reporta
+      # é um scanner que ninguém lê — o valor dele está em barrar o achado novo,
+      # aquele que entrou sem que ninguém percebesse.
+      #
+      # Para isso funcionar, os achados que já existem e são aceitos precisam
+      # estar listados um a um em `skip_check`, com a razão registrada. A lista
+      # abaixo é o inventário das concessões desta arquitetura; qualquer coisa
+      # fora dela derruba a pipeline.
+      #
+      # ┌ CKV_AWS_38/39  Endpoint público do EKS
+      # │  A pipeline do GitHub Actions e a máquina do desenvolvedor alcançam a
+      # │  API do cluster pela internet. Fechar o endpoint exigiria runner
+      # │  self-hosted dentro da VPC ou VPN — desproporcional para um cluster
+      # │  que sobe e desce em algumas horas. O acesso continua autenticado por
+      # │  IAM; público não significa aberto.
+      # │
+      # ├ CKV_AWS_130   Subnets com IP público automático
+      # │  É o desenho da rede, não um descuido: sem NAT Gateway (que custaria
+      # │  US$8,60/mês, mais que o dobro do cluster inteiro), os nós precisam de
+      # │  IP próprio para puxar imagens. Como esta conta não permite Load
+      # │  Balancer, é também o IP do nó que expõe o gateway. Ver CUSTO.md.
+      # │
+      # ├ CKV_AWS_58    Secrets do EKS sem envelope encryption por KMS
+      # │  Exigiria uma chave KMS gerenciada (US$1/mês) para proteger secrets
+      # │  que já não guardam nada: as credenciais reais vivem nos secrets do
+      # │  GitHub Actions e são injetadas em tempo de deploy.
+      # │
+      # ├ CKV2_AWS_11   VPC sem flow logs
+      # │  Flow logs vão para CloudWatch, que cobra por ingestão. Os logs de
+      # │  cluster já estão desligados pelo mesmo motivo (ver eks.tf).
+      # │
+      # └ CKV2_AWS_12   Security group default sem restrição
+      #    O SG default da VPC não é usado por recurso nenhum: os nós e o
+      #    control plane têm SGs próprios, criados pelo EKS.
       - name: Security scan (checkov)
         uses: bridgecrewio/checkov-action@master
         with:
           directory: terraform
           framework: terraform
-          soft_fail: true
+          soft_fail: false
           output_format: cli
+          skip_check: CKV_AWS_38,CKV_AWS_39,CKV_AWS_130,CKV_AWS_58,CKV2_AWS_11,CKV2_AWS_12
 
   # ─── Plan: mostra o que mudaria, sem criar nada ────────────────────────────
   # Quando o cluster era kind local, este job subia um cluster inteiro a cada
