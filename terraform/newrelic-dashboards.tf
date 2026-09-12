@@ -79,10 +79,23 @@ resource "newrelic_one_dashboard" "autogiro" {
     #
     # Média = soma das durações / número de observações. O agente Prometheus
     # expõe as séries `_sum` e `_count` do histograma como métricas próprias,
-    # então a média por status é sum(_sum)/sum(_count), dividida por 3600 para
-    # exibir em horas (o ciclo de uma OS é medido em horas/dias, não em ms).
+    # então a média por status é sum(_sum)/sum(_count).
+    #
+    # A unidade é **segundos**, e a janela é curta (3 horas) de propósito.
+    #
+    # Em produção o ciclo de uma OS leva horas, e faria sentido dividir por 3600.
+    # Mas o painel também precisa ser legível com dados de demonstração, em que
+    # as transições acontecem em segundos — e um widget que exibe "0" é
+    # indistinguível de um sem dados, que foi o que aconteceu: 0,00012 h.
+    #
+    # A janela de 3 horas evita que a média seja diluída por lotes antigos de
+    # massa gerada em sequência imediata. Medido em 12/09/2026, mesmo status:
+    # 2,98 s em 30 min · 1,14 s em 2 h · 0,46 s em 7 dias.
+    #
+    # Em produção, com OS reais, trocar para `/ 3600 AS 'Horas em média'` e
+    # `SINCE 7 days ago`.
     widget_bar {
-      title  = "Tempo médio de execução por status (horas)"
+      title  = "Tempo médio de execução por status (segundos)"
       row    = 4
       column = 1
       width  = 6
@@ -93,7 +106,7 @@ resource "newrelic_one_dashboard" "autogiro" {
         query      = <<-EOT
           SELECT sum(autogiro_service_order_status_duration_seconds_sum)
                / sum(autogiro_service_order_status_duration_seconds_count)
-               / 3600 AS 'Horas em média'
+               AS 'Segundos em média'
           FROM Metric
           WHERE metricName IN (
             'autogiro_service_order_status_duration_seconds_sum',
@@ -101,7 +114,7 @@ resource "newrelic_one_dashboard" "autogiro" {
           )
           AND status IN ('EM_DIAGNOSTICO', 'EM_EXECUCAO', 'FINALIZADA')
           FACET status
-          SINCE 7 days ago
+          SINCE 3 hours ago
         EOT
       }
     }
@@ -109,7 +122,7 @@ resource "newrelic_one_dashboard" "autogiro" {
     # Evolução do tempo médio por status ao longo do tempo: revela gargalos
     # que aparecem só em determinados dias (ex.: fila de diagnóstico crescendo).
     widget_line {
-      title  = "Evolução do tempo por status (horas)"
+      title  = "Evolução do tempo por status (segundos)"
       row    = 4
       column = 7
       width  = 6
@@ -120,7 +133,7 @@ resource "newrelic_one_dashboard" "autogiro" {
         query      = <<-EOT
           SELECT sum(autogiro_service_order_status_duration_seconds_sum)
                / sum(autogiro_service_order_status_duration_seconds_count)
-               / 3600 AS 'Horas em média'
+               AS 'Segundos em média'
           FROM Metric
           WHERE metricName IN (
             'autogiro_service_order_status_duration_seconds_sum',
@@ -128,7 +141,7 @@ resource "newrelic_one_dashboard" "autogiro" {
           )
           AND status IN ('EM_DIAGNOSTICO', 'EM_EXECUCAO', 'FINALIZADA')
           FACET status
-          SINCE 7 days ago
+          SINCE 3 hours ago
           TIMESERIES 1 hour
         EOT
       }
@@ -248,9 +261,16 @@ resource "newrelic_one_dashboard" "autogiro" {
     description = "Rate, Errors e Duration da API, espelhando o dashboard Grafana autogiro-api."
 
     # ── Latência p95 / p99 ──────────────────────────────────────────────────
-    # `autogiro_http_request_duration_seconds` é um Histogram. O New Relic
-    # reconhece o tipo e permite percentile() direto sobre o nome base da
-    # métrica, sem precisar reconstruir o histogram_quantile a partir de _bucket.
+    # `autogiro_http_request_duration_seconds` é um Histogram do Prometheus, e o
+    # agente o ingere decomposto em `_bucket`, `_sum` e `_count` — o nome base
+    # NÃO existe como métrica no New Relic.
+    #
+    # Por isso o percentil se calcula com `histogramPercentile()` sobre a série
+    # `_bucket`. Usar `percentile()` sobre o nome base não dá erro: devolve
+    # **0.0**, que é pior que falhar — o painel mostra latência zero e parece
+    # saudável. Verificado em 12/09/2026: `percentile(...)` = 0.0 enquanto
+    # `histogramPercentile(..._bucket)` = 0.095 s no mesmo intervalo.
+    #
     # SLO do projeto: p95 < 300 ms (0.3 s).
     widget_line {
       title  = "Latência p95 e p99 (SLO: p95 < 300 ms)"
@@ -262,9 +282,9 @@ resource "newrelic_one_dashboard" "autogiro" {
       nrql_query {
         account_id = var.new_relic_account_id
         query      = <<-EOT
-          SELECT percentile(autogiro_http_request_duration_seconds, 95, 99)
+          SELECT histogramPercentile(autogiro_http_request_duration_seconds_bucket, 95, 99)
           FROM Metric
-          WHERE metricName = 'autogiro_http_request_duration_seconds'
+          WHERE metricName = 'autogiro_http_request_duration_seconds_bucket'
           SINCE 3 hours ago
           TIMESERIES
         EOT
@@ -281,9 +301,9 @@ resource "newrelic_one_dashboard" "autogiro" {
       nrql_query {
         account_id = var.new_relic_account_id
         query      = <<-EOT
-          SELECT percentile(autogiro_http_request_duration_seconds, 95) AS 'p95'
+          SELECT histogramPercentile(autogiro_http_request_duration_seconds_bucket, 95) AS 'p95'
           FROM Metric
-          WHERE metricName = 'autogiro_http_request_duration_seconds'
+          WHERE metricName = 'autogiro_http_request_duration_seconds_bucket'
           SINCE 10 minutes ago
         EOT
       }
@@ -391,9 +411,9 @@ resource "newrelic_one_dashboard" "autogiro" {
       nrql_query {
         account_id = var.new_relic_account_id
         query      = <<-EOT
-          SELECT percentile(autogiro_http_request_duration_seconds, 95) AS 'p95 (s)'
+          SELECT histogramPercentile(autogiro_http_request_duration_seconds_bucket, 95) AS 'p95 (s)'
           FROM Metric
-          WHERE metricName = 'autogiro_http_request_duration_seconds'
+          WHERE metricName = 'autogiro_http_request_duration_seconds_bucket'
           FACET endpoint
           SINCE 1 hour ago
           LIMIT 10
