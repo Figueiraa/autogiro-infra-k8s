@@ -16,8 +16,16 @@
 # cobrado à parte e desnecessário aqui.
 # ═══════════════════════════════════════════════════════════════════════════
 
+# Zonas fixadas pelo ID (o nome, como us-east-1a, aponta para zonas físicas
+# diferentes em cada conta). Sem o filtro, uma zona nova que a AWS abrisse
+# poderia mudar a lista e, com ela, onde as subnets são criadas.
 data "aws_availability_zones" "available" {
   state = "available"
+
+  filter {
+    name   = "zone-id"
+    values = var.availability_zone_ids
+  }
 }
 
 # ─── Rede ────────────────────────────────────────────────────────────────────

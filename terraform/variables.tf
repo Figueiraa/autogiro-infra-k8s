@@ -33,6 +33,17 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+variable "availability_zone_ids" {
+  description = "IDs das duas zonas das subnets do cluster (o EKS exige pelo menos duas)."
+  type        = list(string)
+  default     = ["use1-az1", "use1-az2"] # us-east-1a e us-east-1b nesta conta
+
+  validation {
+    condition     = length(var.availability_zone_ids) >= 2
+    error_message = "O EKS exige subnets em pelo menos duas zonas."
+  }
+}
+
 variable "kubernetes_version" {
   description = "Versão do Kubernetes no control plane do EKS."
   type        = string
