@@ -263,6 +263,7 @@ e o `terraform plan` do CI roda sem credenciais.
 |---|---|
 | [`terraform/newrelic-dashboards.tf`](terraform/newrelic-dashboards.tf) | Dashboard "AutoGiro — Operação da Oficina": **4 páginas e 27 widgets** — Indicadores de negócio (8), Saúde da API (8) e Infraestrutura (6) |
 | [`terraform/newrelic-alerts.tf`](terraform/newrelic-alerts.tf) | Policy "AutoGiro — Oficina" com **5 condições de alerta** NRQL, mais destino, canal e workflow de e-mail (`alert_email`) |
+| [`terraform/newrelic-saga.tf`](terraform/newrelic-saga.tf) | Dashboard "AutoGiro — Saga e rastreamento" (**2 páginas, 11 widgets**) e o alerta **Mensagem da Saga na DLQ**, na mesma policy |
 
 As 5 condições espelham as regras de Prometheus já definidas em
 `autogiro-app/monitoring/prometheus/rules/alerts.yml`:
@@ -274,6 +275,38 @@ As 5 condições espelham as regras de Prometheus já definidas em
 | Latência p95 acima do SLO (300 ms) | `LatenciaP95Degradada` |
 | Falha no processamento de ordens de serviço | `FalhaNoEnvioDeNotificacoes` |
 | Exceções não tratadas na API | `ExcecoesNaoTratadas` |
+
+### Saga e rastreamento distribuído
+
+Os microsserviços de OS, Billing e Execution exportam traces com **OpenTelemetry** direto para o
+New Relic (OTLP, `https://otlp.nr-data.net`, autenticado pela mesma license key do agente). O
+contexto do trace viaja nas chamadas HTTP e nos cabeçalhos das mensagens do RabbitMQ, então a
+abertura de uma OS aparece como **um trace só** atravessando os três serviços:
+`POST /service-orders` (OS) → `ReservarPecas` (Execution) → `PecasReservadas` (OS) →
+`GerarOrcamento` (Billing) → `OrcamentoGerado` (OS).
+
+Os spans levam `autogiro.order_id`, `autogiro.saga_id`, `autogiro.message.type` e o desfecho de
+cada entrega, o que permite consultar tudo de uma OS ou Saga:
+
+```sql
+SELECT * FROM Span WHERE autogiro.order_id = '42' SINCE 1 day ago
+```
+
+| Página | Widgets |
+|---|---|
+| Saga | Sagas iniciadas, concluídas e compensadas · compensações por motivo · mensagens processadas por tipo · retentativas e DLQ · tempo de processamento p95 por mensagem · mensagens que foram para a DLQ |
+| Rastreamento | Traces das OS com quantos serviços cada um atravessou · requisições e latência p95 por serviço · spans com erro · tempo médio por dependência (banco, Mercado Pago, catálogo de peças) |
+
+O alerta **Mensagem da Saga na DLQ** abre incidente a qualquer mensagem que esgote as tentativas,
+indicando o serviço e a fila: é um comando ou evento que não foi processado e deixou uma OS parada.
+
+Os recursos do New Relic não dependem do cluster. Para criá-los sem subir o EKS:
+
+```powershell
+terraform -chdir=terraform apply `
+  -target=newrelic_one_dashboard.saga `
+  -target=newrelic_nrql_alert_condition.mensagem_na_dlq
+```
 
 ## CI/CD
 
