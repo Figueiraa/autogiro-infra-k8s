@@ -162,6 +162,13 @@ resource "aws_eks_cluster" "this" {
   # que coleta logs e métricas de dentro do cluster.
   enabled_cluster_log_types = []
 
+  # DECISÃO DE CUSTO: só suporte padrão. Uma versão fora dele entra no suporte
+  # estendido, que cobra US$0,60/h pelo control plane em vez de US$0,10/h, sem
+  # aviso. Com STANDARD, a AWS atualiza a versão em vez de cobrar a mais.
+  upgrade_policy {
+    support_type = "STANDARD"
+  }
+
   vpc_config {
     subnet_ids = aws_subnet.public[*].id
 
@@ -181,9 +188,8 @@ resource "aws_eks_cluster" "this" {
 }
 
 # ─── Node group gerenciado ───────────────────────────────────────────────────
-# DECISÃO DE CUSTO: instâncias Graviton (ARM). A t4g.small custa cerca de
-# US$0,0168/h contra US$0,0208/h da t3.small equivalente em x86 — perto de 20%
-# a menos pela mesma capacidade. Exige que a imagem dos nós seja ARM
+# DECISÃO DE CUSTO: instâncias Graviton (ARM), cerca de 20% mais baratas que as
+# x86 equivalentes (t4g.medium a US$0,0336/h contra US$0,0416/h da t3.medium). Exige que a imagem dos nós seja ARM
 # (AL2023_ARM_64_STANDARD) e que as imagens da aplicação tenham build arm64.
 resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
@@ -196,9 +202,9 @@ resource "aws_eks_node_group" "this" {
   disk_size      = 20
   capacity_type  = "ON_DEMAND"
 
-  # O HPA da aplicação escala PODS (2 a 10). Este bloco escala NÓS: dois nós
-  # sustentam a carga normal e o teto de quatro dá folga para o HPA agendar as
-  # réplicas extras durante a demonstração de escalabilidade.
+  # O HPA de cada serviço escala PODS. Este bloco escala NÓS: dois nós sustentam
+  # a carga normal e o teto dá folga para o HPA agendar réplicas extras durante
+  # a demonstração de escalabilidade.
   scaling_config {
     min_size     = var.node_min_size
     max_size     = var.node_max_size

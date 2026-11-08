@@ -7,13 +7,24 @@
 
 | Recurso | US$/h |
 |---|---|
-| Control plane EKS | 0,100 |
-| 2× t4g.small (Graviton) | 0,034 |
-| EBS 2×20 GB gp3 | 0,004 |
-| IPs públicos dos nós | 0,010 |
-| **Total** | **~0,148** |
+| Control plane EKS (suporte padrão) | 0,100 |
+| 3× t4g.small (Graviton) | 0,050 |
+| EBS 3×20 GB gp3 | 0,007 |
+| IPs públicos dos nós | 0,015 |
+| **Total** | **~0,172** |
 
-**US$ 3,55 por dia** se ficar ligado 24h.
+**US$ 4,13 por dia** se ficar ligado 24h.
+
+Duas armadilhas de custo evitadas no Terraform:
+
+- **Suporte estendido do Kubernetes.** Uma versão que sai do suporte padrão (14 meses após o
+  lançamento no EKS) passa a cobrar **US$ 0,60/h** pelo control plane, seis vezes mais, sem
+  aviso. O cluster usa uma versão em suporte padrão e `upgrade_policy = STANDARD`.
+- **Tipo de instância fora do Free Tier.** A conta está no plano gratuito da AWS, que recusa
+  instâncias não elegíveis (a `t4g.medium` falha com `InvalidParameterCombination` depois de
+  ~40 min tentando). A `t4g.small` é elegível, mas aceita só 11 pods por nó (limite de IPs da
+  VPC CNI): com Kong, agentes do New Relic, RabbitMQ e três microsserviços com duas réplicas
+  cada, o cluster precisa de **três nós**.
 
 Não há custo de Load Balancer: esta conta não permite criá-los, então o Kong entra como
 NodePort na porta 30080 e o ponto de entrada é o IP público de qualquer nó. A restrição
@@ -23,10 +34,10 @@ economiza US$ 0,031/h — o único efeito colateral bom dela.
 
 | Uso | Custo |
 |---|---|
-| 4h/dia por 2 dias | US$ 1,18 |
-| 6h/dia por 2 dias | US$ 1,78 |
-| Uma sessão de 3h para gravar o vídeo | US$ 0,44 |
-| Ligado 8 dias ininterruptos | US$ 28,42 |
+| 4h/dia por 2 dias | US$ 1,38 |
+| 6h/dia por 2 dias | US$ 2,06 |
+| Uma sessão de 3h para gravar o vídeo | US$ 0,52 |
+| Ligado 8 dias ininterruptos | US$ 33,02 |
 
 ## Fluxo recomendado
 

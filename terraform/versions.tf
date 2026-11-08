@@ -20,6 +20,11 @@ terraform {
       source  = "gavinbunney/kubectl"
       version = "~> 1.14"
     }
+    # Senha do RabbitMQ, gerada na criação e guardada só no state e no Secret.
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
     # Dashboards e condicoes de alerta do New Relic (NerdGraph).
     newrelic = {
       source  = "newrelic/newrelic"
