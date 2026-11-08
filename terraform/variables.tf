@@ -47,13 +47,18 @@ variable "availability_zone_ids" {
 variable "kubernetes_version" {
   description = "Versão do Kubernetes no control plane do EKS."
   type        = string
-  default     = "1.31"
+  # Suporte padrão até 27/03/2027. Versões mais antigas (1.33 para trás) já
+  # estão no suporte estendido, cobrado a US$0,60/h.
+  default = "1.35"
 }
 
 variable "node_instance_type" {
   description = "Tipo de instância dos nós. Graviton (ARM) por ser mais barato."
   type        = string
-  default     = "t4g.small"
+  # t4g.medium (2 vCPU, 4 GiB, até 17 pods). A t4g.small aceita só 11 pods por
+  # nó (limite de IPs por interface de rede da VPC CNI) e 2 GiB: não comporta
+  # Kong, agentes do New Relic, RabbitMQ e os três microsserviços.
+  default = "t4g.medium"
 }
 
 variable "node_min_size" {
