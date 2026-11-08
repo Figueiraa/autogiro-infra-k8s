@@ -55,16 +55,17 @@ variable "kubernetes_version" {
 variable "node_instance_type" {
   description = "Tipo de instância dos nós. Graviton (ARM) por ser mais barato."
   type        = string
-  # t4g.medium (2 vCPU, 4 GiB, até 17 pods). A t4g.small aceita só 11 pods por
-  # nó (limite de IPs por interface de rede da VPC CNI) e 2 GiB: não comporta
-  # Kong, agentes do New Relic, RabbitMQ e os três microsserviços.
-  default = "t4g.medium"
+  # A conta está no plano gratuito da AWS, que só lança tipos elegíveis ao Free
+  # Tier: a t4g.medium é recusada (InvalidParameterCombination). A t4g.small é
+  # elegível, mas aceita só 11 pods por nó (limite de IPs por interface da VPC
+  # CNI), por isso o cluster sobe com três nós em vez de dois.
+  default = "t4g.small"
 }
 
 variable "node_min_size" {
   description = "Número mínimo de nós do node group."
   type        = number
-  default     = 2
+  default     = 3
 }
 
 variable "node_max_size" {
@@ -76,7 +77,7 @@ variable "node_max_size" {
 variable "node_desired_size" {
   description = "Número de nós na criação do cluster."
   type        = number
-  default     = 2
+  default     = 3
 }
 
 variable "new_relic_license_key" {

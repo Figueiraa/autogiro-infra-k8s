@@ -23,7 +23,7 @@ próprios manifestos e rodam sobre esta plataforma.
 |---|---|
 | IaC | Terraform ≥ 1.5 · state no HCP Terraform |
 | Cluster | Amazon EKS gerenciado (Kubernetes 1.35, só suporte padrão) |
-| Nós | Node group gerenciado · 2× `t4g.medium` (Graviton/ARM) |
+| Nós | Node group gerenciado · 3× `t4g.small` (Graviton/ARM) |
 | Provider de nuvem | `hashicorp/aws` ~> 5.70 |
 | API Gateway | Kong Gateway OSS 3.x (DB-less), chart 2.46.0 |
 | Autoscaling | metrics-server 3.12.2 + HPA |
@@ -64,8 +64,8 @@ próprios manifestos e rodam sobre esta plataforma.
    │   │              │                                                │ │
    │   │   ┌──────────▼─────────────────────────────────────────────┐   │ │
    │   │   │ node group "autogiro-nodes"                            │   │ │
-   │   │   │ 2× t4g.medium · AL2023_ARM_64_STANDARD · EBS 20 GB     │   │ │
-   │   │   │ ON_DEMAND · min 2 / desired 2 / max 4                  │   │ │
+   │   │   │ 3× t4g.small · AL2023_ARM_64_STANDARD · EBS 20 GB      │   │ │
+   │   │   │ ON_DEMAND · min 3 / desired 3 / max 4                  │   │ │
    │   │   │                                                        │   │ │
    │   │   │  ┌──────────────────────────────────────────┐          │   │ │
    │   │   │  │ ns: kong                                 │          │   │ │
