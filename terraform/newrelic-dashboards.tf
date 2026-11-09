@@ -11,7 +11,7 @@
 # Equivalências de PromQL usadas aqui:
 #   rate(counter[5m])            -> rate(sum(metrica), 1 second)
 #   increase(counter[24h])       -> sum(metrica) com janela de 24h
-#   histogram_quantile(0.95, …)  -> percentile(metrica, 95) sobre o histograma
+#   histogram_quantile(0.95, …)  -> histogramPercentile(metrica_bucket, 95)
 #
 # O recurso é condicional: sem a User API key nada é criado, o que mantém o
 # `terraform plan` do CI funcionando sem credenciais (mesmo padrão do
@@ -245,12 +245,13 @@ resource "newrelic_one_dashboard" "autogiro" {
   # ═══ Página 2: Saúde da API (método RED) ═══════════════════════════════════
   page {
     name        = "Saúde da API"
-    description = "Rate, Errors e Duration da API, espelhando o dashboard Grafana autogiro-api."
+    description = "Rate, Errors e Duration das APIs dos microsserviços."
 
     # ── Latência p95 / p99 ──────────────────────────────────────────────────
-    # `autogiro_http_request_duration_seconds` é um Histogram. O New Relic
-    # reconhece o tipo e permite percentile() direto sobre o nome base da
-    # métrica, sem precisar reconstruir o histogram_quantile a partir de _bucket.
+    # `autogiro_http_request_duration_seconds` é um Histogram. O agente o ingere
+    # decomposto em `_bucket`, `_sum` e `_count`; o nome base não existe como
+    # métrica, e percentile() sobre ele devolve 0.0 em silêncio (parece latência
+    # ótima). A conta certa é histogramPercentile() sobre `_bucket`.
     # SLO do projeto: p95 < 300 ms (0.3 s).
     widget_line {
       title  = "Latência p95 e p99 (SLO: p95 < 300 ms)"
@@ -262,9 +263,9 @@ resource "newrelic_one_dashboard" "autogiro" {
       nrql_query {
         account_id = var.new_relic_account_id
         query      = <<-EOT
-          SELECT percentile(autogiro_http_request_duration_seconds, 95, 99)
+          SELECT histogramPercentile(autogiro_http_request_duration_seconds_bucket, 95, 99)
           FROM Metric
-          WHERE metricName = 'autogiro_http_request_duration_seconds'
+          WHERE metricName = 'autogiro_http_request_duration_seconds_bucket'
           SINCE 3 hours ago
           TIMESERIES
         EOT
@@ -281,9 +282,9 @@ resource "newrelic_one_dashboard" "autogiro" {
       nrql_query {
         account_id = var.new_relic_account_id
         query      = <<-EOT
-          SELECT percentile(autogiro_http_request_duration_seconds, 95) AS 'p95'
+          SELECT histogramPercentile(autogiro_http_request_duration_seconds_bucket, 95) AS 'p95'
           FROM Metric
-          WHERE metricName = 'autogiro_http_request_duration_seconds'
+          WHERE metricName = 'autogiro_http_request_duration_seconds_bucket'
           SINCE 10 minutes ago
         EOT
       }
@@ -391,9 +392,9 @@ resource "newrelic_one_dashboard" "autogiro" {
       nrql_query {
         account_id = var.new_relic_account_id
         query      = <<-EOT
-          SELECT percentile(autogiro_http_request_duration_seconds, 95) AS 'p95 (s)'
+          SELECT histogramPercentile(autogiro_http_request_duration_seconds_bucket, 95) AS 'p95 (s)'
           FROM Metric
-          WHERE metricName = 'autogiro_http_request_duration_seconds'
+          WHERE metricName = 'autogiro_http_request_duration_seconds_bucket'
           FACET endpoint
           SINCE 1 hour ago
           LIMIT 10

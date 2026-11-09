@@ -12,7 +12,7 @@
 # lenta" e "o gateway está lento".
 #
 # O plugin é anexado pelos Ingresses da aplicação, através da annotation
-# `konghq.com/plugins` (ver k8s/ingress.yaml no autogiro-app) — o mesmo
+# `konghq.com/plugins` (ver k8s/ingress.yaml de cada microsserviço) — o mesmo
 # mecanismo do plugin de JWT. O label `global: "true"`, que dispensaria as
 # annotations, foi depreciado nas versões recentes do ingress controller e é
 # silenciosamente ignorado: o plugin simplesmente não chega ao Kong.
