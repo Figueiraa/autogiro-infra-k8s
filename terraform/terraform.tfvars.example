@@ -7,17 +7,17 @@ namespace    = "autogiro"
 # As credenciais NÃO vão aqui: use variáveis de ambiente (AWS_ACCESS_KEY_ID,
 # AWS_SECRET_ACCESS_KEY) ou um perfil do AWS CLI.
 aws_region         = "us-east-1"
-kubernetes_version = "1.31"
+kubernetes_version = "1.35" # suporte padrão; versões antigas cobram suporte estendido
 
 # Graviton (ARM): as imagens da aplicação precisam ter build arm64.
 node_instance_type = "t4g.small"
 
 # O HPA escala pods (2 a 10); estes valores escalam os nós que os sustentam.
-node_min_size     = 2
+node_min_size     = 3
 node_max_size     = 4
-node_desired_size = 2
+node_desired_size = 3
 
-# Mesmo segredo configurado em autogiro-auth e autogiro-app.
+# Mesmo segredo configurado em autogiro-auth (a Lambda que emite o token).
 jwt_secret = "gere-com-python-c-import-secrets-print-secrets-token_urlsafe-48"
 
 # License key do New Relic. Deixe vazio para não instalar o agente.

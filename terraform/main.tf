@@ -60,8 +60,7 @@ resource "helm_release" "kong" {
     value = "false"
   }
 
-  # No EKS o proxy vira um Service do tipo LoadBalancer: a AWS provisiona um
-  # NodePort com porta fixa, e nao LoadBalancer.
+  # O proxy do Kong é um Service NodePort com porta fixa, e nao LoadBalancer.
   #
   # A intencao original era um Network Load Balancer, mas esta conta AWS responde
   # `OperationNotPermitted: This AWS account currently does not support creating
@@ -110,7 +109,7 @@ resource "helm_release" "kong" {
 }
 
 # ─── New Relic ───────────────────────────────────────────────────────────────
-# Agente de infraestrutura, coleta de logs e métricas do cluster (requisito R9).
+# Agente de infraestrutura, coleta de logs e métricas do cluster.
 # Só é instalado quando a license key é informada.
 resource "helm_release" "new_relic" {
   count = var.new_relic_license_key == "" ? 0 : 1
@@ -143,7 +142,7 @@ resource "helm_release" "new_relic" {
     value = "true"
   }
 
-  # Logs estruturados com correlação de trace (requisito R9).
+  # Logs estruturados com correlação de trace.
   set {
     name  = "logging.enabled"
     value = "true"

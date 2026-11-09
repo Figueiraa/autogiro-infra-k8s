@@ -1,7 +1,6 @@
 # ─── Alertas do New Relic ────────────────────────────────────────────────────
-# Espelha as regras já definidas em Prometheus
-# (autogiro-app/monitoring/prometheus/rules/alerts.yml) para que a operação
-# tenha o mesmo conjunto de sinais no ambiente gerenciado.
+# Condições sobre as métricas Prometheus que os microsserviços expõem em
+# /metrics (prefixo `autogiro_`) e o agente do New Relic coleta no cluster.
 #
 # Correspondência PromQL -> NRQL nas condições NRQL:
 #   * `for: 5m` do Prometheus vira `threshold_duration` (em segundos) na
@@ -115,9 +114,9 @@ resource "newrelic_nrql_alert_condition" "taxa_erro_5xx" {
 }
 
 # ─── 3. Latência p95 acima do SLO de 300 ms ──────────────────────────────────
-# Espelha LatenciaP95Degradada. O New Relic reconhece o tipo Histogram da
-# métrica Prometheus, então percentile() opera direto sobre o nome base, sem
-# reconstruir o histogram_quantile a partir das séries `_bucket`.
+# histogramPercentile() sobre `_bucket`: o agente ingere o histograma
+# decomposto, e percentile() sobre o nome base devolveria 0.0 e o alerta nunca
+# dispararia.
 resource "newrelic_nrql_alert_condition" "latencia_p95" {
   count = var.new_relic_api_key == "" ? 0 : 1
 
@@ -130,9 +129,9 @@ resource "newrelic_nrql_alert_condition" "latencia_p95" {
 
   nrql {
     query = <<-EOT
-      SELECT percentile(autogiro_http_request_duration_seconds, 95)
+      SELECT histogramPercentile(autogiro_http_request_duration_seconds_bucket, 95)
       FROM Metric
-      WHERE metricName = 'autogiro_http_request_duration_seconds'
+      WHERE metricName = 'autogiro_http_request_duration_seconds_bucket'
     EOT
   }
 

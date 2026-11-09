@@ -72,7 +72,7 @@ resource "kubernetes_secret" "kong_jwt" {
 
 # ─── Plugin ──────────────────────────────────────────────────────────────────
 # Referenciado pelo Ingress da aplicação através da annotation
-# `konghq.com/plugins: autogiro-jwt` (ver k8s/ingress.yaml no autogiro-app).
+# `konghq.com/plugins: autogiro-jwt` (ver k8s/ingress.yaml de cada microsserviço).
 resource "kubectl_manifest" "kong_jwt_plugin" {
   yaml_body = yamlencode({
     apiVersion = "configuration.konghq.com/v1"

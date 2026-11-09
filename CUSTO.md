@@ -47,11 +47,15 @@ terraform -chdir=terraform apply -auto-approve
 
 # ... trabalhar, testar, gravar ...
 
-# Terminar a sessão — zera o custo
-terraform -chdir=terraform destroy -auto-approve
+# Terminar a sessão — zera o custo e preserva os painéis do New Relic
+terraform -chdir=terraform destroy -auto-approve `
+  -target=aws_vpc.this -target=aws_iam_role.cluster -target=aws_iam_role.node
 ```
 
-Como o state vive no HCP Terraform, o `apply` reproduz o mesmo cluster a cada vez.
+Como o state vive no HCP Terraform, o `apply` reproduz o mesmo cluster a cada vez. O destroy
+direcionado leva tudo o que depende da VPC e das roles IAM e deixa no state só os dashboards
+e alertas do New Relic e a senha do RabbitMQ, que não custam nada na AWS. O passo a passo
+completo, com o que fazer se o destroy travar, está no [README](README.md#ao-terminar-de-usar).
 
 ## Depois de cada destroy, confira
 

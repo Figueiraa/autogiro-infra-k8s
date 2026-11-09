@@ -74,7 +74,8 @@ resource "aws_subnet" "public" {
   tags = {
     Name = "${var.cluster_name}-public-${count.index}"
     # Sinaliza ao controlador de serviços da AWS que ele pode criar
-    # Load Balancers voltados para a internet nestas subnets (o Kong usa).
+    # Load Balancers voltados para a internet nestas subnets (sem uso enquanto
+    # a conta não permitir criá-los; o Kong entra por NodePort).
     "kubernetes.io/role/elb" = "1"
   }
 }
@@ -158,7 +159,7 @@ resource "aws_eks_cluster" "this" {
 
   # DECISÃO DE CUSTO: nenhum tipo de log do control plane habilitado.
   # Cada tipo vira um log group no CloudWatch, cobrado por GB ingerido e
-  # armazenado. A observabilidade do projeto (requisito R9) vem do New Relic,
+  # armazenado. A observabilidade do projeto vem do New Relic,
   # que coleta logs e métricas de dentro do cluster.
   enabled_cluster_log_types = []
 
@@ -189,7 +190,7 @@ resource "aws_eks_cluster" "this" {
 
 # ─── Node group gerenciado ───────────────────────────────────────────────────
 # DECISÃO DE CUSTO: instâncias Graviton (ARM), cerca de 20% mais baratas que as
-# x86 equivalentes (t4g.medium a US$0,0336/h contra US$0,0416/h da t3.medium). Exige que a imagem dos nós seja ARM
+# x86 equivalentes (t4g.small a US$0,0168/h contra US$0,0208/h da t3.small). Exige que a imagem dos nós seja ARM
 # (AL2023_ARM_64_STANDARD) e que as imagens da aplicação tenham build arm64.
 resource "aws_eks_node_group" "this" {
   cluster_name    = aws_eks_cluster.this.name
@@ -202,7 +203,7 @@ resource "aws_eks_node_group" "this" {
   disk_size      = 20
   capacity_type  = "ON_DEMAND"
 
-  # O HPA de cada serviço escala PODS. Este bloco escala NÓS: dois nós sustentam
+  # O HPA de cada serviço escala PODS. Este bloco escala NÓS: três nós sustentam
   # a carga normal e o teto dá folga para o HPA agendar réplicas extras durante
   # a demonstração de escalabilidade.
   scaling_config {
