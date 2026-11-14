@@ -12,7 +12,8 @@ kubernetes_version = "1.35" # suporte padrão; versões antigas cobram suporte e
 # Graviton (ARM): as imagens da aplicação precisam ter build arm64.
 node_instance_type = "t4g.small"
 
-# O HPA escala pods (2 a 10); estes valores escalam os nós que os sustentam.
+# O HPA escala pods (2 a 6 por serviço); estes valores definem os nós. Sem Cluster
+# Autoscaler, um quarto nó entra ajustando desired_size à mão.
 node_min_size     = 3
 node_max_size     = 4
 node_desired_size = 3
