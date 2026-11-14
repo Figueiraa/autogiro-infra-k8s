@@ -5,15 +5,19 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  # Subir o cluster pela pipeline é uma decisão explícita: só por disparo manual.
+  workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: write
   security-events: write
 
+# Em PR, um push novo cancela o plan anterior. Fora de PR, não: cortar um
+# `terraform apply` no meio deixa recurso criado fora do state.
 concurrency:
   group: ci-cd-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   TF_IN_AUTOMATION: "true"
@@ -123,13 +127,13 @@ jobs:
       - name: Terraform Init
         env:
           TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-          TF_WORKSPACE: autogiro-infra-k8s-${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
+          TF_WORKSPACE: autogiro-infra-k8s-prod
         run: terraform -chdir=terraform init
 
       - name: Terraform Plan
         env:
           TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-          TF_WORKSPACE: autogiro-infra-k8s-${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
+          TF_WORKSPACE: autogiro-infra-k8s-prod
           TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
           TF_VAR_new_relic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
           TF_VAR_new_relic_account_id: ${{ secrets.NEW_RELIC_ACCOUNT_ID }}
@@ -141,29 +145,26 @@ jobs:
         run: terraform -chdir=terraform plan -no-color -lock=false
 
   # ─── CD: provisiona o cluster na AWS ───────────────────────────────────────
-  # Com o cluster na nuvem, o runner hospedado do GitHub alcança a AWS
-  # normalmente — o self-hosted runner deixou de ser necessário.
+  # Só por disparo manual (`workflow_dispatch`) e com DEPLOY_ENABLED: criar um
+  # EKS custa dinheiro, então subir o cluster é uma decisão explícita, nunca
+  # efeito colateral de um push.
   #
-  # O apply continua protegido por DEPLOY_ENABLED: criar um EKS custa dinheiro,
-  # então subir o cluster é uma decisão explícita, não efeito colateral de um push.
+  # Sempre no workspace `autogiro-infra-k8s-prod`, o mesmo dos scripts locais e
+  # dos painéis do New Relic. Antes o apply rodava em push na `develop`, no
+  # workspace `homolog`: com o cluster vivo no `prod`, ele tentaria criar um
+  # segundo do zero e falharia nas IAM Roles (globais na conta,
+  # `EntityAlreadyExists`) depois de já ter criado VPC, subnets e internet
+  # gateway, que ficariam órfãos cobrando fora de qualquer state (aconteceu em
+  # 09/09).
   #
-  # E só em `develop`. O motivo é concreto: o workspace de prod tem state próprio,
-  # então um apply nele não reaproveita o cluster de homolog — tenta criar um
-  # segundo, do zero. Isso falha, porque as IAM Roles são globais na conta
-  # (`EntityAlreadyExists`), mas só depois de já ter criado a VPC, as subnets e o
-  # internet gateway, que ficam órfãos cobrando fora de qualquer state. Aconteceu
-  # em 09/09 e a limpeza foi manual.
-  #
-  # Um ambiente de produção de verdade seria uma conta AWS separada, com IAM
-  # próprio; dentro de uma única conta, dois clusters completos dobrariam o custo
-  # (~US$107/mês) sem acrescentar nada à entrega. O `plan` continua rodando em
-  # `main`, então a configuração segue validada contra a AWS real nos dois ramos.
+  # Para destruir, use o `destruir-cluster.ps1` ou o `make destroy`: ambos fazem
+  # o destroy direcionado que preserva os painéis e alertas do New Relic.
   deploy:
     name: Deploy cluster
     needs: plan
-    if: github.ref_name == 'develop' && github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
+    if: github.event_name == 'workflow_dispatch' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
+    environment: prod
     steps:
       - uses: actions/checkout@v4
 
@@ -181,13 +182,13 @@ jobs:
       - name: Terraform Init
         env:
           TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-          TF_WORKSPACE: autogiro-infra-k8s-${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
+          TF_WORKSPACE: autogiro-infra-k8s-prod
         run: terraform -chdir=terraform init
 
       - name: Terraform Apply
         env:
           TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-          TF_WORKSPACE: autogiro-infra-k8s-${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
+          TF_WORKSPACE: autogiro-infra-k8s-prod
           TF_VAR_jwt_secret: ${{ secrets.JWT_SECRET }}
           TF_VAR_new_relic_license_key: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
           TF_VAR_new_relic_account_id: ${{ secrets.NEW_RELIC_ACCOUNT_ID }}
@@ -197,13 +198,13 @@ jobs:
       - name: Resumo
         env:
           TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
-          TF_WORKSPACE: autogiro-infra-k8s-${{ github.ref_name == 'main' && 'prod' || 'homolog' }}
+          TF_WORKSPACE: autogiro-infra-k8s-prod
         run: |
           {
             echo "### Cluster provisionado"
             echo ""
             echo "- Cluster: $(terraform -chdir=terraform output -raw cluster_name)"
-            echo "- Gateway: $(terraform -chdir=terraform output -raw kong_proxy_url 2>/dev/null || echo 'aguardando o Load Balancer')"
+            echo "- Gateway (Kong, NodePort): $(terraform -chdir=terraform output -raw kong_proxy_url 2>/dev/null || echo 'aguardando os nós')"
             echo ""
             echo "Lembre-se de destruir o cluster ao terminar: ele cobra por hora."
           } >> "$GITHUB_STEP_SUMMARY"

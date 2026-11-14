@@ -10,7 +10,8 @@ sobre esta plataforma.
 ## Propósito
 
 - Provisiona o cluster **Amazon EKS** (rede, IAM, control plane e node group), com
-  escalabilidade de pods via **HPA** e de nós pelo node group.
+  escalabilidade de pods via **HPA**. O node group tem 3 nós e teto de 4, mas não há Cluster
+  Autoscaler: um quarto nó entra ajustando `desired_size`, não sozinho.
 - Instala o **Kong Gateway** como Ingress Controller e API Gateway, e cria os plugins
   `autogiro-jwt` (validação do token) e `autogiro-prometheus` (métricas do gateway), além do
   Consumer e da credencial JWT.
@@ -220,10 +221,9 @@ Policies IAM necessárias no usuário que roda o Terraform:
 
 O state fica no **HCP Terraform** (`terraform/backend.tf`, organização `autogiro`), com o
 workspace escolhido em tempo de execução via `TF_WORKSPACE`. O cluster em uso vive no
-workspace **`autogiro-infra-k8s-prod`**; existe também o `-homolog`, usado pelo `plan` da
-pipeline nos outros branches. Os dois não podem ter cluster ao mesmo tempo: as roles IAM são
-globais na conta, e um segundo `apply` falharia com `EntityAlreadyExists` depois de já ter
-criado a rede. Autenticação por `terraform login` na máquina ou `TF_TOKEN_app_terraform_io`
+workspace **`autogiro-infra-k8s-prod`**, o único usado pelos scripts e pela pipeline. Um
+segundo workspace com cluster não funciona nesta conta: as roles IAM são globais, e um segundo
+`apply` falharia com `EntityAlreadyExists` depois de já ter criado a rede. Autenticação por `terraform login` na máquina ou `TF_TOKEN_app_terraform_io`
 no ambiente.
 
 ## Uso
@@ -421,9 +421,10 @@ terraform -chdir=terraform apply `
 |---|---|
 | Pull request para `main` ou `develop` | `Validate` (`fmt`, `validate`, `tflint`, `checkov`) + `Terraform Plan` |
 | Push em `main` ou `develop` | O acima |
-| Push em `develop` com `DEPLOY_ENABLED=true` | `Deploy cluster` — `terraform apply` no workspace `-homolog` |
+| Disparo manual (`workflow_dispatch`) com `DEPLOY_ENABLED=true` | O acima + `Deploy cluster` — `terraform apply` no workspace `-prod` |
 
-O workspace do `plan` é escolhido pelo branch: `main` → `-prod`, qualquer outro → `-homolog`.
+O `plan` roda sempre contra o workspace `-prod`, onde está o state real do cluster e dos
+painéis do New Relic.
 
 O **checkov** reprova o build (`soft_fail: false`). As concessões aceitas desta arquitetura
 (endpoint público do EKS, subnets com IP público, secrets sem KMS, VPC sem flow logs, SG
@@ -435,10 +436,11 @@ subia um cluster inteiro a cada execução e era grátis. Com o EKS, subir e des
 custaria **~US$ 0,60 e 30 minutos** — então o `plan` valida a configuração contra a API real da
 AWS sem provisionar recurso nenhum.
 
-O `apply` pela pipeline existe, mas fica restrito a `develop` e protegido por `DEPLOY_ENABLED`,
-porque criar um EKS custa dinheiro: subir o cluster é decisão explícita, não efeito colateral
-de um push. Na rotina da entrega, o cluster é criado e destruído pelos scripts locais, no
-workspace `-prod`.
+O `apply` pela pipeline existe, mas só por disparo manual e com `DEPLOY_ENABLED`, porque criar
+um EKS custa dinheiro: subir o cluster é decisão explícita, nunca efeito colateral de um push.
+Na rotina da entrega, o cluster é criado e destruído pelos scripts locais, no mesmo workspace
+`-prod`. Um push nunca cancela uma execução em andamento fora de PR, para não cortar um
+`apply` no meio.
 
 ## Ao terminar de usar
 

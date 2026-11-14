@@ -203,9 +203,10 @@ resource "aws_eks_node_group" "this" {
   disk_size      = 20
   capacity_type  = "ON_DEMAND"
 
-  # O HPA de cada serviço escala PODS. Este bloco escala NÓS: três nós sustentam
-  # a carga normal e o teto dá folga para o HPA agendar réplicas extras durante
-  # a demonstração de escalabilidade.
+  # O HPA de cada serviço escala PODS. Este bloco define os NÓS: três sustentam a
+  # carga normal com as réplicas mínimas. Não há Cluster Autoscaler instalado, então
+  # os nós não crescem sozinhos: o teto de quatro permite subir o `desired_size` à
+  # mão (console ou `aws eks update-nodegroup-config`) se o HPA precisar de espaço.
   scaling_config {
     min_size     = var.node_min_size
     max_size     = var.node_max_size
